@@ -1,0 +1,82 @@
+pipeline {
+    agent any
+
+    environment {
+        SONAR_TOKEN = credentials('sonar-token')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main', 
+                    url: 'https://github.com/osc-zam22/Midterm.git',
+                    credentialsId: 'github_jenkinsPAT'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                script {
+                    docker.image('openjdk:18-jdk').inside('--network ci_network') {
+                        sh 'mkdir -p out'
+                        sh 'javac -source 11 -target 11 -d out MathUtils.java'
+                    }
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                script {
+                    docker.image('openjdk:11-jdk').inside('--network ci_network') {
+                        sh 'javac -cp lib/*:out -d out MathUtilsTest.java'
+                        sh 'java -cp lib/*:out org.junit.runner.JUnitCore MathUtilsTest'
+                    }
+                }
+            }
+        }
+
+        stage('Static Code Analysis') {
+            steps {
+                script {
+                    docker.image('openjdk:8-jdk').inside('--network ci_network') {
+                        sh '''
+                            apt-get update && apt-get install -y wget unzip
+
+                            if [ ! -d "sonar-scanner-5.0.1.3006-linux" ]; then
+                                echo "Downloading SonarScanner..."
+                                wget -nc https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+                                unzip -n sonar-scanner-cli-5.0.1.3006-linux.zip
+                            else
+                                echo "SonarScanner already downloaded and extracted."
+                            fi
+
+                            ./sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
+                                -Dsonar.projectKey=midterm-java \
+                                -Dsonar.sources=. \
+                                -Dsonar.host.url=http://sonar:9000 \
+                                -Dsonar.login=$SONAR_TOKEN
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    sh 'docker build -t osczam99/midterm-java-app:latest .'
+                }
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'DockerHubPAT', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                    sh 'docker push osczam99/midterm-java-app:latest'
+                }
+            }
+        }
+    }
+}
