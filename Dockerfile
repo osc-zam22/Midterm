@@ -4,9 +4,12 @@ FROM openjdk:11-jdk
 # Create a working directory inside the container
 WORKDIR /app
 
-# Copy compiled Java class files and libraries into the container
-COPY out/ ./out/
-COPY lib/ ./lib/
+# Copy source files and libraries into the container
+COPY MathUtils.java .
+COPY lib/ ./lib
 
-# Run the main class (update MathUtils to your actual class with a main() method)
+# Compile the Java file inside the image
+RUN mkdir -p out && javac -cp "lib/*" -d out MathUtils.java
+
+# Run the main class
 CMD ["java", "-cp", "lib/*:out", "MathUtils"]
